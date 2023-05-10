@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "string.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,6 +32,8 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define READING_RATE	100
+#define MESSAGE_RATE	10
+#define BUFFER_SIZE		13
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -42,29 +44,29 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
-UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart5;
 
 /* USER CODE BEGIN PV */
-static uint16_t Pot_Value;
+static float Pot_Resistance;
 static GPIO_PinState Button_State;
 static GPIO_PinState Previous_Button_State;
 
 static uint32_t Previous_Time;
+static uint32_t Previous_Send_Time;
 
+static uint8_t Buffer[BUFFER_SIZE];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
-static void MX_UART4_Init(void);
 static void MX_UART5_Init(void);
 /* USER CODE BEGIN PFP */
 static void InitializeVariables(void);
-static uint16_t GetAdcValue(ADC_HandleTypeDef* adc_var);
+static float GetResistanceValue(ADC_HandleTypeDef* adc_var);
 static GPIO_PinState GetButtonState(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin, GPIO_PinState previous_state);
-static void SendNewMessage(uint16_t value);
+static void SendNewMessage(float value);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -101,7 +103,6 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_ADC1_Init();
-  MX_UART4_Init();
   MX_UART5_Init();
   /* USER CODE BEGIN 2 */
 
@@ -114,19 +115,34 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    Pot_Value = GetAdcValue(&hadc1);
+	if ( (HAL_GetTick() - Previous_Send_Time) > MESSAGE_RATE)
+	{
+	  Pot_Resistance = GetResistanceValue(&hadc1);
+	  SendNewMessage(Pot_Resistance);
+	}
+
     Button_State = GetButtonState(B1_GPIO_Port, B1_Pin, Previous_Button_State);
 
     if ( (Previous_Button_State == GPIO_PIN_RESET) &&
     	 (Button_State == GPIO_PIN_SET) )
     {
-    	SendNewMessage(Pot_Value);
+    	SendNewMessage(Pot_Resistance);
     }
-
     Previous_Button_State = Button_State;
 
+
+    if (HAL_UART_GetState(&huart5) == HAL_UART_STATE_READY)
+    {
+    	HAL_UART_Receive(&huart5, Buffer, BUFFER_SIZE, HAL_MAX_DELAY);
+    	if(Buffer[0] == 0xFF)
+    	{
+    		SendNewMessage(Pot_Resistance);
+    		memset(&Buffer, 0, sizeof(Buffer));
+    	}
+    }
+
     // Visual feedback for Analog Read and Button Read
-    HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, ((Pot_Value > 2048) ? GPIO_PIN_SET : GPIO_PIN_RESET));
+    HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, ((Pot_Resistance > 2048) ? GPIO_PIN_SET : GPIO_PIN_RESET));
 	HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, Button_State);
   }
   /* USER CODE END 3 */
@@ -230,39 +246,6 @@ static void MX_ADC1_Init(void)
 }
 
 /**
-  * @brief UART4 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_UART4_Init(void)
-{
-
-  /* USER CODE BEGIN UART4_Init 0 */
-
-  /* USER CODE END UART4_Init 0 */
-
-  /* USER CODE BEGIN UART4_Init 1 */
-
-  /* USER CODE END UART4_Init 1 */
-  huart4.Instance = UART4;
-  huart4.Init.BaudRate = 115200;
-  huart4.Init.WordLength = UART_WORDLENGTH_8B;
-  huart4.Init.StopBits = UART_STOPBITS_1;
-  huart4.Init.Parity = UART_PARITY_NONE;
-  huart4.Init.Mode = UART_MODE_TX_RX;
-  huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart4.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN UART4_Init 2 */
-
-  /* USER CODE END UART4_Init 2 */
-
-}
-
-/**
   * @brief UART5 Initialization Function
   * @param None
   * @retval None
@@ -278,7 +261,7 @@ static void MX_UART5_Init(void)
 
   /* USER CODE END UART5_Init 1 */
   huart5.Instance = UART5;
-  huart5.Init.BaudRate = 115200;
+  huart5.Init.BaudRate = 230400;
   huart5.Init.WordLength = UART_WORDLENGTH_8B;
   huart5.Init.StopBits = UART_STOPBITS_1;
   huart5.Init.Parity = UART_PARITY_NONE;
@@ -413,6 +396,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Alternate = GPIO_AF10_OTG_FS;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PC10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_10;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF8_UART4;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
   /*Configure GPIO pin : OTG_FS_OverCurrent_Pin */
   GPIO_InitStruct.Pin = OTG_FS_OverCurrent_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
@@ -440,19 +431,22 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 static void InitializeVariables(void)
 {
-	Pot_Value = 0;
+	Pot_Resistance = 0;
 	Button_State = GPIO_PIN_RESET;
 	Previous_Button_State = GPIO_PIN_RESET;
 	Previous_Time = 0;
+	Previous_Send_Time = 0;
 }
 
-static uint16_t GetAdcValue(ADC_HandleTypeDef* adc_var)
+static float GetResistanceValue(ADC_HandleTypeDef* adc_var)
 {
-	uint16_t ret_val = 0;
+	float ret_val = 0;
 
 	HAL_ADC_Start(adc_var);
 	HAL_ADC_PollForConversion(adc_var, 100);
-	ret_val = HAL_ADC_GetValue(adc_var);
+	ret_val = (float) HAL_ADC_GetValue(adc_var);
+
+	ret_val = (10 * ret_val)/4095;
 
 	return ret_val;
 }
@@ -475,9 +469,25 @@ static GPIO_PinState GetButtonState(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin, GPIO
     return ret_val;
 }
 
-static void SendNewMessage(uint16_t value)
+static void SendNewMessage(float value)
 {
-//IMPLEMENT HERE
+	uint8_t payload[BUFFER_SIZE];
+
+	uint8_t * byte_ptr = (uint8_t *) &value;
+
+	memset(&payload, 0, sizeof(payload));
+
+	payload[0] = 5;
+//	payload[1] = (uint8_t)(value & 0x000000FF);
+//	payload[2] = (uint8_t)((value & 0x0000FF00) >> 8);
+//	payload[3] = (uint8_t)((value & 0x00FF0000) >> 16);
+//	payload[4] = (uint8_t)((value & 0xFF000000) >> 24);
+	payload[1] = byte_ptr[3];
+	payload[2] = byte_ptr[2];
+	payload[3] = byte_ptr[1];
+	payload[4] = byte_ptr[0];
+
+	HAL_UART_Transmit(&huart5, payload, sizeof(payload), 100);
 }
 /* USER CODE END 4 */
 
