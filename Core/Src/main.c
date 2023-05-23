@@ -22,6 +22,9 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "string.h"
+#include "PotSensor.h"
+#include "Communication.h"
+#include "Button.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -31,9 +34,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define READING_RATE	100
 #define MESSAGE_RATE	10
-#define BUFFER_SIZE		13
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -47,11 +48,6 @@ ADC_HandleTypeDef hadc1;
 UART_HandleTypeDef huart5;
 
 /* USER CODE BEGIN PV */
-static float Pot_Resistance;
-static GPIO_PinState Button_State;
-static GPIO_PinState Previous_Button_State;
-
-static uint32_t Previous_Time;
 static uint32_t Previous_Send_Time;
 
 static uint8_t Buffer[BUFFER_SIZE];
@@ -64,9 +60,6 @@ static void MX_ADC1_Init(void);
 static void MX_UART5_Init(void);
 /* USER CODE BEGIN PFP */
 static void InitializeVariables(void);
-static float GetResistanceValue(ADC_HandleTypeDef* adc_var);
-static GPIO_PinState GetButtonState(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin, GPIO_PinState previous_state);
-static void SendNewMessage(float value);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -105,7 +98,9 @@ int main(void)
   MX_ADC1_Init();
   MX_UART5_Init();
   /* USER CODE BEGIN 2 */
-
+  PotSensor__Initialize(&hadc1);
+  Communication__Initialize(&huart5);
+  Button__Initialize(B1_GPIO_Port, B1_Pin);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -115,35 +110,28 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	if ( (HAL_GetTick() - Previous_Send_Time) > MESSAGE_RATE)
+	if ( (HAL_GetTick() - Previous_Send_Time) >= MESSAGE_RATE)
 	{
-	  Pot_Resistance = GetResistanceValue(&hadc1);
-	  SendNewMessage(Pot_Resistance);
+	  Communication__SendNewMessage(PotSensor__GetResistanceValue());
 	}
 
-    Button_State = GetButtonState(B1_GPIO_Port, B1_Pin, Previous_Button_State);
-
-    if ( (Previous_Button_State == GPIO_PIN_RESET) &&
-    	 (Button_State == GPIO_PIN_SET) )
+    if (Button__GetTransitionEvent() == 1)
     {
-    	SendNewMessage(Pot_Resistance);
+    	Communication__SendNewMessage(PotSensor__GetResistanceValue());
     }
-    Previous_Button_State = Button_State;
 
-
-    if (HAL_UART_GetState(&huart5) == HAL_UART_STATE_READY)
+    if (Communication__GetState() == HAL_UART_STATE_READY)
     {
-    	HAL_UART_Receive(&huart5, Buffer, BUFFER_SIZE, HAL_MAX_DELAY);
+    	Communication__ReceiveNewMessage(Buffer);
     	if(Buffer[0] == 0xFF)
     	{
-    		SendNewMessage(Pot_Resistance);
+    		Communication__SendNewMessage(PotSensor__GetResistanceValue());
     		memset(&Buffer, 0, sizeof(Buffer));
     	}
     }
 
     // Visual feedback for Analog Read and Button Read
-    HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, ((Pot_Resistance > 2048) ? GPIO_PIN_SET : GPIO_PIN_RESET));
-	HAL_GPIO_WritePin(LD3_GPIO_Port, LD3_Pin, Button_State);
+    HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, ((PotSensor__GetResistanceValue() > 2048) ? GPIO_PIN_SET : GPIO_PIN_RESET));
   }
   /* USER CODE END 3 */
 }
@@ -431,64 +419,9 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 static void InitializeVariables(void)
 {
-	Pot_Resistance = 0;
-	Button_State = GPIO_PIN_RESET;
-	Previous_Button_State = GPIO_PIN_RESET;
-	Previous_Time = 0;
 	Previous_Send_Time = 0;
 }
 
-static float GetResistanceValue(ADC_HandleTypeDef* adc_var)
-{
-	float ret_val = 0;
-
-	HAL_ADC_Start(adc_var);
-	HAL_ADC_PollForConversion(adc_var, 100);
-	ret_val = (float) HAL_ADC_GetValue(adc_var);
-
-	ret_val = (10 * ret_val)/4095;
-
-	return ret_val;
-}
-
-
-static GPIO_PinState GetButtonState(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin, GPIO_PinState previous_state)
-{
-	GPIO_PinState ret_val;
-	uint32_t current_time;
-
-	ret_val = previous_state;
-
-    current_time = HAL_GetTick();
-    if ( (current_time - Previous_Time) > READING_RATE)
-    {
-		ret_val = HAL_GPIO_ReadPin(GPIOx, GPIO_Pin);
-		Previous_Time = current_time;
-    }
-
-    return ret_val;
-}
-
-static void SendNewMessage(float value)
-{
-	uint8_t payload[BUFFER_SIZE];
-
-	uint8_t * byte_ptr = (uint8_t *) &value;
-
-	memset(&payload, 0, sizeof(payload));
-
-	payload[0] = 5;
-//	payload[1] = (uint8_t)(value & 0x000000FF);
-//	payload[2] = (uint8_t)((value & 0x0000FF00) >> 8);
-//	payload[3] = (uint8_t)((value & 0x00FF0000) >> 16);
-//	payload[4] = (uint8_t)((value & 0xFF000000) >> 24);
-	payload[1] = byte_ptr[3];
-	payload[2] = byte_ptr[2];
-	payload[3] = byte_ptr[1];
-	payload[4] = byte_ptr[0];
-
-	HAL_UART_Transmit(&huart5, payload, sizeof(payload), 100);
-}
 /* USER CODE END 4 */
 
 /**

@@ -1,0 +1,4 @@
+Communication.c:5:6:Communication__Initialize	1
+Communication.c:10:6:Communication__SendNewMessage	1
+Communication.c:27:23:Communication__GetState	1
+Communication.c:32:6:Communication__ReceiveNewMessage	1

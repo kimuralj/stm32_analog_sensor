@@ -1,0 +1,2 @@
+PotSensor.c:5:6:PotSensor__Initialize	1
+PotSensor.c:10:7:PotSensor__GetResistanceValue	1
