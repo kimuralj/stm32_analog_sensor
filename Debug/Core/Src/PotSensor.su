@@ -1,0 +1,2 @@
+../Core/Src/PotSensor.c:5:6:PotSensor__Initialize	16	static
+../Core/Src/PotSensor.c:10:7:PotSensor__GetResistanceValue	16	static

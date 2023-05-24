@@ -45,6 +45,7 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart5;
 
 /* USER CODE BEGIN PV */
@@ -58,8 +59,9 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_UART5_Init(void);
+static void MX_UART4_Init(void);
 /* USER CODE BEGIN PFP */
-static void InitializeVariables(void);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -74,7 +76,7 @@ static void InitializeVariables(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-	InitializeVariables();
+	Previous_Send_Time = 0;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -97,10 +99,14 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC1_Init();
   MX_UART5_Init();
+  MX_UART4_Init();
   /* USER CODE BEGIN 2 */
   PotSensor__Initialize(&hadc1);
   Communication__Initialize(&huart5);
   Button__Initialize(B1_GPIO_Port, B1_Pin);
+
+  // Start listening the communication bus, when a message is available it executes the callback
+  Communication__ReceiveNewMessage(Buffer);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -110,28 +116,19 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	if ( (HAL_GetTick() - Previous_Send_Time) >= MESSAGE_RATE)
+	if ((HAL_GetTick() - Previous_Send_Time) >= MESSAGE_RATE)
 	{
-	  Communication__SendNewMessage(PotSensor__GetResistanceValue());
+		Communication__SendNewMessage(PotSensor__GetResistanceValue());
+		Previous_Send_Time = HAL_GetTick();
+
+	}
+	if (Button__GetTransitionEvent() == EVENT_CLICK)
+	{
+		Communication__SendNewMessage(PotSensor__GetResistanceValue());
 	}
 
-    if (Button__GetTransitionEvent() == 1)
-    {
-    	Communication__SendNewMessage(PotSensor__GetResistanceValue());
-    }
-
-    if (Communication__GetState() == HAL_UART_STATE_READY)
-    {
-    	Communication__ReceiveNewMessage(Buffer);
-    	if(Buffer[0] == 0xFF)
-    	{
-    		Communication__SendNewMessage(PotSensor__GetResistanceValue());
-    		memset(&Buffer, 0, sizeof(Buffer));
-    	}
-    }
-
     // Visual feedback for Analog Read and Button Read
-    HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, ((PotSensor__GetResistanceValue() > 2048) ? GPIO_PIN_SET : GPIO_PIN_RESET));
+    HAL_GPIO_WritePin(LD4_GPIO_Port, LD4_Pin, ((PotSensor__GetResistanceValue() > 5) ? GPIO_PIN_SET : GPIO_PIN_RESET));
   }
   /* USER CODE END 3 */
 }
@@ -230,6 +227,39 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief UART4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART4_Init(void)
+{
+
+  /* USER CODE BEGIN UART4_Init 0 */
+
+  /* USER CODE END UART4_Init 0 */
+
+  /* USER CODE BEGIN UART4_Init 1 */
+
+  /* USER CODE END UART4_Init 1 */
+  huart4.Instance = UART4;
+  huart4.Init.BaudRate = 230400;
+  huart4.Init.WordLength = UART_WORDLENGTH_8B;
+  huart4.Init.StopBits = UART_STOPBITS_1;
+  huart4.Init.Parity = UART_PARITY_NONE;
+  huart4.Init.Mode = UART_MODE_TX_RX;
+  huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart4.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART4_Init 2 */
+
+  /* USER CODE END UART4_Init 2 */
 
 }
 
@@ -384,14 +414,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Alternate = GPIO_AF10_OTG_FS;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PC10 */
-  GPIO_InitStruct.Pin = GPIO_PIN_10;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF8_UART4;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
   /*Configure GPIO pin : OTG_FS_OverCurrent_Pin */
   GPIO_InitStruct.Pin = OTG_FS_OverCurrent_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
@@ -417,9 +439,19 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-static void InitializeVariables(void)
+
+// Callback function that runs when a new message is available
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	Previous_Send_Time = 0;
+	if(huart->Instance == UART5){
+		//Check if the EV asked for a new measurement
+		if (Buffer[0] == 0xFF)
+		{
+			Communication__SendNewMessage(PotSensor__GetResistanceValue());
+		}
+		//After treating the message, start listening again
+		Communication__ReceiveNewMessage(Buffer);
+	}
 }
 
 /* USER CODE END 4 */

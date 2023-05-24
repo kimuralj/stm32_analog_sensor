@@ -1,4 +1,5 @@
 #include "Communication.h"
+#include "string.h"
 
 static UART_HandleTypeDef * myUart;
 
@@ -21,15 +22,11 @@ void Communication__SendNewMessage(float value)
 	payload[3] = byte_ptr[1];
 	payload[4] = byte_ptr[0];
 
-	HAL_UART_Transmit(&myUart, payload, sizeof(payload), 100);
-}
-
-HAL_UART_StateTypeDef Communication__GetState(void)
-{
-	return HAL_UART_GetState(&myUart);
+	HAL_UART_Transmit(myUart, payload, sizeof(payload), 100);
 }
 
 void Communication__ReceiveNewMessage(uint8_t *buffer)
 {
-	HAL_UART_Receive(&myUart, buffer, BUFFER_SIZE, HAL_MAX_DELAY);
+	memset(buffer, 0, sizeof(*buffer));
+	HAL_UART_Receive_IT(myUart, buffer, BUFFER_SIZE);
 }

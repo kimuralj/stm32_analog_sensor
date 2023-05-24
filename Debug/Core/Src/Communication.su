@@ -1,0 +1,3 @@
+../Core/Src/Communication.c:6:6:Communication__Initialize	16	static
+../Core/Src/Communication.c:11:6:Communication__SendNewMessage	40	static
+../Core/Src/Communication.c:28:6:Communication__ReceiveNewMessage	16	static

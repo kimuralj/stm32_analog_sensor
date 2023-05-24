@@ -1,0 +1,2 @@
+../Core/Src/Button.c:9:6:Button__Initialize	16	static
+../Core/Src/Button.c:17:9:Button__GetTransitionEvent	16	static
