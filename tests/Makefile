@@ -9,7 +9,7 @@ create:
 	cp ../Core/Src/Communication.h targets/Communication.h
 build:
 	rm -f targets/main_test
-	g++ -o targets/main_test main.cpp tests.cpp hal_mock.cpp targets/PotSensor.c targets/Communication.c -lgtest -lgtest_main -pthread
+	g++ -o targets/main_test main.cpp tests.cpp hal_mock.cpp targets/PotSensor.c targets/Communication.c targets/Button.c -lgtest -lgtest_main -pthread
 clean:
 	rm -rf targets
 run:
