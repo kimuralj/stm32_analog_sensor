@@ -14,3 +14,5 @@ clean:
 	rm -rf targets
 run:
 	./targets/main_test
+all:
+	make clean create build run
